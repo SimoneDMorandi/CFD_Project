@@ -1,4 +1,4 @@
-function splitp (ischeme)
+function split_P
 
 global gamma ga gb gc gd ge gf gg gh gi gj % era USE PIgamma_PAR
 global nc ncm k kout ka iord itest stab % era USE NUM_PAR
@@ -122,15 +122,11 @@ for n=2:ncmm
     ud = uc;
     pc = r3a-(rhoa*aa)*uc;
     pd = pc;
-    if ischeme == 1
-        hc = pc/rhoa+r2a;
-        hd = pd/rhob+r2b;
-    end
-    if ischeme == 2
-        hc = pc/rhob + r2b; 
-        hd = pd/rhoa + r2a;
-    end
-    
+    hc = pc/rhoa+r2a;
+    hd = pd/rhob+r2b;
+    hd_P = pc/rhob+r2b; % P-ordering: pressure
+              % from left Riemann solve,
+              % entropy from right state
     % if a variable is negative (could happen for strong waves)
     if pc <= 0.0 || pd <= 0.0 || hc<= 0.0 || hd <= 0.0
         icalc=1; % new primitive variables with ln
@@ -160,22 +156,12 @@ for n=2:ncmm
     end
     
     % Computing fluxes of rho, rho u etc
-    if ischeme == 1
-        ac = sqrt(2.0*gd*hc);
-        ad = sqrt(2.0*gd*hd);
-        ala=ua-aa;
-        alc=uc-ac;
-        ald=ud+ad;
-        alb=ub+ab;
-    end
-    if ischeme == 2
-        ac = sqrt(2.0*gd*hc);
-        ad = sqrt(2.0*gd*hd);
-        ala = ua + aa;   
-        alc = uc + ac;
-        ald = ud - ad;   
-        alb = ub - ab;
-    end
+    ac = sqrt(2.0*gd*hc);
+    ad = sqrt(2.0*gd*hd);
+    ala=ua-aa;
+    alc=uc-ac;
+    ald=ud+ad;
+    alb=ub+ab;
     alx=uc;
     [f1a,f2a,f3a] = decod(pa,ua,ha);
     [f1b,f2b,f3b] = decod(pb,ub,hb);
@@ -190,20 +176,6 @@ for n=2:ncmm
     df2l = 0.0;
     df3l = 0.0;
     
-    if (alx >=0) % c/d
-        alam2r = 1.0;
-        alam2l = 0.0;
-    else         % c\d
-        alam2r = 0.0;
-        alam2l = 1.0;
-    end
-    % delta f wrt the second family
-    df1r =df1r + alam2r*(f1d-f1c);
-    df2r =df2r + alam2r*(f2d-f2c);
-    df3r =df3r + alam2r*(f3d-f3c);
-    df1l =df1l + alam2l*(f1d-f1c);
-    df2l =df2l + alam2l*(f2d-f2c);
-    df3l =df3l + alam2l*(f3d-f3c);
     
     if (ala*alc >= 0)
         if (ala >=0) % a/c
@@ -255,7 +227,8 @@ for n=2:ncmm
         end
     end
     
-    if (ald*alb >= 0)
+    alc_P = uc+sqrt(2.0*gd*hd_P); %ald equiv.
+    if (alc_P*alb >= 0)
         if (ald >=0) %d/b
             alam3r = 1.0;
             alam3l = 0.0;
@@ -263,12 +236,13 @@ for n=2:ncmm
             alam3r = 0.0;
             alam3l = 1.0;
         end
-        df1r = df1r + alam3r*(f1b-f1d);
-        df2r = df2r + alam3r*(f2b-f2d);
-        df3r = df3r + alam3r*(f3b-f3d);
-        df1l = df1l + alam3l*(f1b-f1d);
-        df2l = df2l + alam3l*(f2b-f2d);
-        df3l = df3l + alam3l*(f3b-f3d);
+        [f1P,f2P,f3P]=decod(pc,uc,hd_P);
+        df1r=df1r+alam3r*(f1b-f1P);
+        df2r=df2r+alam3r*(f2b-f2P);
+        df3r=df3r+alam3r*(f3b-f3P);
+        df1l=df1l+alam3l*(f1b-f1P);
+        df2l=df2l+alam3l*(f2b-f2P);
+        df3l=df3l+alam3l*(f3b-f3P);
     else
         gdgd=2.0*gd;
         if (icalc == 0)
@@ -288,22 +262,39 @@ for n=2:ncmm
             pst = exp((log(hst) - r2b) * ga);
         end
         [f1st,f2st,f3st] = decod(pst,ust,hst);
-        if (ald <=0) %d\*/b
-            df1r = df1r + (f1b-f1st);
+        [f1P,f2P,f3P]=decod(pc,uc,hd_P);
+        if (alc_P <=0) %d\*/b
+            df1r=df1r+(f1b-f1st);
             df2r = df2r + (f2b-f2st);
             df3r = df3r + (f3b-f3st);
-            df1l = df1l + (f1st-f1d);
+            df1l=df1l+(f1st-f1P);
             df2l = df2l + (f2st-f2d);
             df3l = df3l + (f3st-f3d);
         else         %d/*\b
-            df1l = df1l + (f1b-f1st);
+            df1l=df1l+(f1b-f1st);
             df2l = df2l + (f2b-f2st);
             df3l = df3l + (f3b-f3st);
-            df1r = df1r + (f1st-f1d);
+            df1r=df1r+(f1st-f1P);
             df2r = df2r + (f2st-f2d);
             df3r = df3r + (f3st-f3d);
         end
     end
+
+    if (alx >=0) % c / hd_P
+        alam2r = 1.0;
+        alam2l = 0.0;
+    else
+        alam2r = 0.0;
+        alam2l = 1.0;
+    end
+    [f1P,f2P,f3P]=decod(pc,uc,hd_P);
+    df1r=df1r+alam2r*(f1P-f1c);
+    df2r=df2r+alam2r*(f2P-f2c);
+    df3r=df3r+alam2r*(f3P-f3c);
+    df1l=df1l+alam2l*(f1P-f1c);
+    df2l=df2l+alam2l*(f2P-f2c);
+    df3l=df3l+alam2l*(f3P-f3c);
+
     phi1(n)=f1a+df1l;
     phi2(n)=f2a+df2l;
     phi3(n)=f3a+df3l;

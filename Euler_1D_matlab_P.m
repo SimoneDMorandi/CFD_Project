@@ -2,7 +2,7 @@ function input_dialog % Manages the dialog window
 clear all
 close all
 format long
-clc 
+
 fig_input = figure('Name','Input dialog','Position',[1250,300,560,420]);
 txt_NC = uicontrol('Style',...
     'text',...
@@ -61,7 +61,7 @@ txt_tit4 = uicontrol('Style',...
     'Enable','on');
 bg_isch = uicontrol('Style',...
     'popup',...
-    'String',{'FDS-Osher', 'FDS-Osher (P-ordering)'},... % you can add other stings ...
+    'String',{'FDS-Osher (O-ordering)','FDS-Osher (P-ordering)'},... % you can add other stings ...
     'Position',[10 210 100 20],...
     'Visible','on',...
     'Enable','on');
@@ -445,7 +445,6 @@ fig_tem = figure('Name','Temperature','Position',[650,300,560,420]);
     function pb_cbk(source,event,handles)
         pb.Enable = 'off';
         Euler_1D(pb_cont,pb_stop,fig_rho,fig_pre,fig_vel,fig_tem,bg_isch,pop_test,edit_NC,edit_CFL,edit_IORD,edit_rhoL,edit_uL,edit_pL,edit_Gamma,edit_rhoR,edit_uR,edit_pR,edit_x0,edit_timemax,edit_ka,txt_stepcounter2,txt_time2);
-        
     end
 
     function pb_stop_cbk(source1,event1,handles1)
@@ -491,8 +490,7 @@ if (pb_cont.Value == 0)
 nc = str2double(edit_NC.String);
 iord = str2double(edit_IORD.String);
 stab = str2double(edit_CFL.String);
-ischeme = bg_isch.Value; % 1-> PFD-Osher
-fprintf('ischeme = %d\n', ischeme);
+ischeme = bg_isch.Value; % 1-> PFD-Osher, 2-> PDF-P-Ordering
 gamma = str2double(edit_Gamma.String);
 rhol = str2double(edit_rhoL.String);
 ul   = str2double(edit_uL.String);
@@ -585,8 +583,12 @@ txt_time2.String = tt;
     
     if (iord == 2)  % 
         eno1() % Computing slopes of variables and time derivative inside the cell for the 2nd order
-    end    
-    splitp(ischeme); % Different splitting -> approximate Riemann's problem
+    end
+    if bg_isch.Value == 1
+        split();
+    else
+        split_P(); % Different splitting -> approximate Riemann's problem
+    end
     march(); % Advancing in time
     
     if (itest == 1)
