@@ -600,6 +600,19 @@ txt_time2.String = tt;
     end
 
 % Plotting
+
+% Build filename prefix: testcase_Ordering
+test_names = {'GenericRP','Sod','Test1','Test2','Test3','Test4','Test5','Test6','Test7','Test8'};
+testcase_str = test_names{pop_test.Value};
+ordering_names = {'O','P'};
+ordering_str = ordering_names{bg_isch.Value};
+fname_prefix = sprintf('%s_%s', testcase_str, ordering_str);
+
+save_string_rho = sprintf('%s_rho.png', fname_prefix);
+save_string_p   = sprintf('%s_p.png',   fname_prefix);
+save_string_v   = sprintf('%s_v.png',   fname_prefix);
+save_string_T   = sprintf('%s_T.png',   fname_prefix);
+
 figure(fig_rho)
 hold off
 plot(x,rho,'o-')
@@ -627,16 +640,39 @@ hold on
 thesol(timek(k),utha,uthb,uthc,uthd,ptha,pthb,pthc,pthd,atha,athb,athc,athd,rhotha,rhothb,rhothc,rhothd,stha,sthb,sthc,sthd,alama,alamb,alamc,alamd,alamx,vshl,vshr,el,er);
 figure(fig_rho)
 plot(xth,rhoth,'o-')
+title('Density.')
+xlabel('x')
+ylabel('rho')
+legend('Numerical Solution','Exact solution')
 
 figure(fig_pre)
 plot(xth,pth,'o-')
+title('Pressure.')
+xlabel('x')
+ylabel('p')
+legend('Numerical Solution','Exact solution')
 
 figure(fig_vel)
 plot(xth,uth,'o-')
+title('Velocity.')
+xlabel('x')
+ylabel('v')
+legend('Numerical Solution','Exact solution')
 
 figure(fig_tem)
 plot(xth,pth./rhoth,'o-')
+title('Temperature.')
+xlabel('x')
+ylabel('T')
+legend('Numerical Solution','Exact solution')
+
 end
+
+% Save final figures as PNG files
+saveas(fig_rho, save_string_rho);
+saveas(fig_pre, save_string_p);
+saveas(fig_vel, save_string_v);
+saveas(fig_tem, save_string_T);
 
 pb_cont.Enable = 'On';
 pb_stop.Enable = 'On';
