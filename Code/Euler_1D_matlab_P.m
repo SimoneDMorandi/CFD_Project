@@ -61,7 +61,7 @@ txt_tit4 = uicontrol('Style',...
     'Enable','on');
 bg_isch = uicontrol('Style',...
     'popup',...
-    'String',{'FDS-Osher (O-ordering)','FDS-Osher (P-ordering)'},... % you can add other stings ...
+    'String',{'O-ordering','P-ordering'},... % you can add other stings ...
     'Position',[10 210 100 20],...
     'Visible','on',...
     'Enable','on');
@@ -601,18 +601,6 @@ txt_time2.String = tt;
 
 % Plotting
 
-% Build filename prefix: testcase_Ordering
-test_names = {'GenericRP','Sod','Test1','Test2','Test3','Test4','Test5','Test6','Test7','Test8'};
-testcase_str = test_names{pop_test.Value};
-ordering_names = {'O','P'};
-ordering_str = ordering_names{bg_isch.Value};
-fname_prefix = sprintf('%s_%s', testcase_str, ordering_str);
-
-save_string_rho = sprintf('%s_rho.png', fname_prefix);
-save_string_p   = sprintf('%s_p.png',   fname_prefix);
-save_string_v   = sprintf('%s_v.png',   fname_prefix);
-save_string_T   = sprintf('%s_T.png',   fname_prefix);
-
 figure(fig_rho)
 hold off
 plot(x,rho,'o-')
@@ -669,6 +657,17 @@ legend('Numerical Solution','Exact solution')
 end
 
 % Save final figures as PNG files
+% Build filename prefix: testcase_Ordering
+test_names = {'GenericRP','Sod','Test1','Test2','Test3','Test4','Test5','Test6','Test7','Test8'};
+testcase_str = test_names{pop_test.Value};
+ordering_names = {'O','P'};
+ordering_str = ordering_names{bg_isch.Value};
+fname_prefix = sprintf('%s_%s', testcase_str, ordering_str);
+
+save_string_rho = sprintf('%s_rho.png', fname_prefix);
+save_string_p   = sprintf('%s_p.png',   fname_prefix);
+save_string_v   = sprintf('%s_v.png',   fname_prefix);
+save_string_T   = sprintf('%s_T.png',   fname_prefix);
 saveas(fig_rho, save_string_rho);
 saveas(fig_pre, save_string_p);
 saveas(fig_vel, save_string_v);

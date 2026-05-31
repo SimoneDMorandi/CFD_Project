@@ -152,21 +152,19 @@ for n=2:ncmm
         pd = exp(ppd);
         hc = exp(hhc);
         hd = exp(hhd);
+        hd_P = pc/rhob + r2b;
         fprintf('warning icalc=1 at k=%i and n=%i',k,n)
     end
     
     % Computing fluxes of rho, rho u etc
     ac = sqrt(2.0*gd*hc);
-    ad = sqrt(2.0*gd*hd);
     ala=ua-aa;
     alc=uc-ac;
-    ald=ud+ad;
     alb=ub+ab;
     alx=uc;
     [f1a,f2a,f3a] = decod(pa,ua,ha);
     [f1b,f2b,f3b] = decod(pb,ub,hb);
     [f1c,f2c,f3c] = decod(pc,uc,hc);
-    [f1d,f2d,f3d] = decod(pd,ud,hd);
 
 
     df1r = 0.0;
@@ -229,7 +227,7 @@ for n=2:ncmm
     
     alc_P = uc+sqrt(2.0*gd*hd_P); %ald equiv.
     if (alc_P*alb >= 0)
-        if (ald >=0) %d/b
+        if (alc_P >=0) %d/b
             alam3r = 1.0;
             alam3l = 0.0;
         else         %d\b
@@ -264,19 +262,19 @@ for n=2:ncmm
         [f1st,f2st,f3st] = decod(pst,ust,hst);
         [f1P,f2P,f3P]=decod(pc,uc,hd_P);
         if (alc_P <=0) %d\*/b
-            df1r=df1r+(f1b-f1st);
+            df1r =  df1r+(f1b-f1st);
             df2r = df2r + (f2b-f2st);
             df3r = df3r + (f3b-f3st);
-            df1l=df1l+(f1st-f1P);
-            df2l = df2l + (f2st-f2d);
-            df3l = df3l + (f3st-f3d);
+            df1l = df1l+(f1st-f1P);
+            df2l = df2l + (f2st-f2P);
+            df3l = df3l + (f3st-f3P);
         else         %d/*\b
             df1l=df1l+(f1b-f1st);
             df2l = df2l + (f2b-f2st);
             df3l = df3l + (f3b-f3st);
             df1r=df1r+(f1st-f1P);
-            df2r = df2r + (f2st-f2d);
-            df3r = df3r + (f3st-f3d);
+            df2r = df2r + (f2st-f2P);
+            df3r = df3r + (f3st-f3P);
         end
     end
 
