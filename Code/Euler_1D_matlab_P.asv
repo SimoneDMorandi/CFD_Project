@@ -592,7 +592,7 @@ txt_time2.String = tt;
         sum2=mean(w2) + (p(nc)-p(1))*time;
         sum3=mean(w3);
         
-        %fprintf('K=%i - sum1=%f - sum2=%f - sum3=%f',k,sum1,sum2,sum3);
+        fprintf('K=%i - sum1=%f - sum2=%f - sum3=%f',k,sum1,sum2,sum3);
     end
 
 % Plotting

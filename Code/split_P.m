@@ -10,6 +10,12 @@ global  xsh1 xsh2 xsh3 xsh4 xsh5 xsh3l xsh3r xsh4l xsh4r % era USE INIT_PAR
 global p t u s rho a e amach ptot ttot flow flht h htot % era USE VARS
 global w1 w2 w3 f1 f2 f3 phi1 phi2 phi3                    % era USE VARS
 global pxeno uxeno hxeno ppxeno hhxeno ppt ut hht % era USE ENO
+global ischeme   % 1 -> FDS-Osher (linearized);  2 -> Osher O-ordering;  3 -> Osher P-ordering
+
+% Fallback in case the driver did not set the scheme selector.
+if isempty(ischeme)
+    ischeme = 1;
+end
 
 enuo2 = 0.5*dt/dx; % For 2nd order
 
@@ -17,23 +23,29 @@ ncmm = ncm-1;
 for n=2:ncmm
     nm=n;
     np=nm+1;
-    
-    pa  =  p(nm); 
+
+    %==================================================================
+    %  COMMON SET-UP  (identical for all three schemes)
+    %  -> interface left/right states (a,b) in primitive variables p,u,h
+    %  -> 2nd order ENO reconstruction (iord ~= 1)
+    %  -> boundary captures (p002.. at n=2, pncm.. at n=ncmm)
+    %==================================================================
+    pa  =  p(nm);
     pb  =  p(np);
     ua  =  u(nm);
     ub  =  u(np);
-    ha  =  h(nm); % hentalpy -> choice of primitive variables
+    ha  =  h(nm); % enthalpy -> choice of primitive variables
     hb  =  h(np);
     % We have the relative Riemann's invariants -> p*a*du etc...
 
-    if n == 2 
+    if n == 2
         p002   =  pa;
         u002   =  ua;
         h002   =  ha;
         rho002 =  p002/h002*ga;
         a002   =  sqrt(gamma*p002/rho002);
     end
-    
+
     if n == ncmm
         pncm   =  pb;
         uncm   =  ub;
@@ -41,8 +53,8 @@ for n=2:ncmm
         rhoncm =  pncm/hncm*ga;
         ancm   =  sqrt(gamma*pncm/rhoncm);
     end
-    
-    % id iord = 2 we use ln(p),u,ln(h) as primitives
+
+    % if iord = 2 we use ln(p),u,ln(h) as primitives
     % we avoid negative p and h -> could happen with the second order
     % we'll have the relative invariants
     % this can be used when the first order fails
@@ -59,11 +71,11 @@ for n=2:ncmm
         ub   =  ub  - .5* uxeno(n+1);
         hha  =  hha + .5* hhxeno(n);
         hhb  =  hhb - .5* hhxeno(n+1);
-        
+
         ppa = ppa + enuo2*ppt(nm);
         ua  = ua  + enuo2*ut(nm);
         hha = hha + enuo2*hht(nm);
-        
+
         if n == 2
             pp002  =  log(p(nm));
             u002   =  u(nm);
@@ -79,11 +91,11 @@ for n=2:ncmm
             rho002 =  p002/h002*ga;
             a002   =  sqrt(gamma*p002/rho002);
         end
-        
+
         ppb = ppb + enuo2*ppt(np);
         ub  = ub  + enuo2*ut(np);
         hhb = hhb + enuo2*hht(np);
-        
+
         if n == ncmm
             ppncm  =  log(p(np));
             uncm   =  u(np);
@@ -99,204 +111,400 @@ for n=2:ncmm
             rhoncm =  pncm/hncm*ga;
             ancm   =  sqrt(gamma*pncm/rhoncm);
         end
-        
+
         pa = exp(ppa);
         pb = exp(ppb);
         ha = exp(hha);
         hb = exp(hhb);
     end
-    
-    % Solving Riemann's problem.
+
+    % left/right densities and sound speeds at the (reconstructed) states
     rhoa = pa/ha*ga;
     rhob = pb/hb*ga;
     aa   = sqrt(gamma*pa/rhoa);
     ab   = sqrt(gamma*pb/rhob);
-    
-    icalc=0;
-    
-    r3a=pa+(rhoa*aa)*ua;
-    r2a=ha-pa/rhoa;
-    r2b=hb-pb/rhob;
-    r1b=pb-(rhob*ab)*ub;
-    uc = (r3a-r1b)/((rhoa*aa)+(rhob*ab));
-    ud = uc;
-    pc = r3a-(rhoa*aa)*uc;
-    pd = pc;
-    hc = pc/rhoa+r2a;
-    hd = pd/rhob+r2b;
-    hd_P = pc/rhob+r2b; % P-ordering: pressure
-              % from left Riemann solve,
-              % entropy from right state
-    % if a variable is negative (could happen for strong waves)
-    if pc <= 0.0 || pd <= 0.0 || hc<= 0.0 || hd <= 0.0
-        icalc=1; % new primitive variables with ln
-    end
-   
-    % new invariants 
-    if icalc == 1
-        ppa = log(pa);
-        ppb = log(pb);
-        hha = log(ha);
-        hhb = log(hb);
-        r3a = ppa + gamma/aa*ua;
-        r2a = hha-ppa/ga;
-        r2b = hhb-ppb/ga;
-        r1b = ppb-gamma/ab*ub;
-        uc = (r3a-r1b)/(gamma/aa+gamma/ab);
+
+    %==================================================================
+    %  SCHEME DISPATCH
+    %==================================================================
+    if ischeme == 1
+        %--------------------------------------------------------------
+        %  OPTION 1 : FDS-Osher (original) -- linearized acoustic star
+        %  state, with log-variable fallback (icalc).  UNCHANGED.
+        %--------------------------------------------------------------
+        icalc=0;
+
+        r3a=pa+(rhoa*aa)*ua;
+        r2a=ha-pa/rhoa;
+        r2b=hb-pb/rhob;
+        r1b=pb-(rhob*ab)*ub;
+        uc = (r3a-r1b)/((rhoa*aa)+(rhob*ab));
         ud = uc;
-        ppc= r3a-gamma/aa*uc;
-        ppd= ppc;
-        hhc= ppc/ga+r2a;
-        hhd= ppd/ga+r2b;
-        pc = exp(ppc);
-        pd = exp(ppd);
-        hc = exp(hhc);
-        hd = exp(hhd);
-        hd_P = pc/rhob + r2b;
-        fprintf('warning icalc=1 at k=%i and n=%i',k,n)
-    end
-    
-    % Computing fluxes of rho, rho u etc
-    ac = sqrt(2.0*gd*hc);
-    ala=ua-aa;
-    alc=uc-ac;
-    alb=ub+ab;
-    alx=uc;
-    [f1a,f2a,f3a] = decod(pa,ua,ha);
-    [f1b,f2b,f3b] = decod(pb,ub,hb);
-    [f1c,f2c,f3c] = decod(pc,uc,hc);
+        pc = r3a-(rhoa*aa)*uc;
+        pd = pc;
+        hc = pc/rhoa+r2a;
+        hd = pd/rhob+r2b;
 
+        % if a variable is negative (could happen for strong waves)
+        if pc <= 0.0 || pd <= 0.0 || hc<= 0.0 || hd <= 0.0
+            icalc=1; % new primitive variables with ln
+        end
 
-    df1r = 0.0;
-    df2r = 0.0;
-    df3r = 0.0;
-    df1l = 0.0;
-    df2l = 0.0;
-    df3l = 0.0;
-    
-    
-    if (ala*alc >= 0)
-        if (ala >=0) % a/c
-            alam1r = 1.0;
-            alam1l = 0.0;
-        else         % a\c
-            alam1r = 0.0;
-            alam1l = 1.0;
+        % new invariants
+        if icalc == 1
+            ppa = log(pa);
+            ppb = log(pb);
+            hha = log(ha);
+            hhb = log(hb);
+            r3a = ppa + gamma/aa*ua;
+            r2a = hha-ppa/ga;
+            r2b = hhb-ppb/ga;
+            r1b = ppb-gamma/ab*ub;
+            uc = (r3a-r1b)/(gamma/aa+gamma/ab);
+            ud = uc;
+            ppc= r3a-gamma/aa*uc;
+            ppd= ppc;
+            hhc= ppc/ga+r2a;
+            hhd= ppd/ga+r2b;
+            pc = exp(ppc);
+            pd = exp(ppd);
+            hc = exp(hhc);
+            hd = exp(hhd);
+            fprintf('warning icalc=1 at k=%i and n=%i',k,n)
         end
-        df1r = df1r + alam1r*(f1c-f1a);
-        df2r = df2r + alam1r*(f2c-f2a);
-        df3r = df3r + alam1r*(f3c-f3a);
-        df1l = df1l + alam1l*(f1c-f1a);
-        df2l = df2l + alam1l*(f2c-f2a);
-        df3l = df3l + alam1l*(f3c-f3a);
-    else % transonic case
-        gdgd=2.0*gd;
-        if (icalc == 0)
-            sqrhst=0.5*(-sqrt(gdgd)*aa+sqrt(gdgd*aa*aa+4.0*(r3a/rhoa+r2a)));
-            hst = sqrhst^2;
-            ast = sqrt(gdgd)*sqrhst;
-            ust = ast;
-            pst = rhoa*(-r2a+hst);
+
+        % Computing fluxes of rho, rho u etc
+        ac = sqrt(2.0*gd*hc);
+        ad = sqrt(2.0*gd*hd);
+        ala=ua-aa;
+        alc=uc-ac;
+        ald=ud+ad;
+        alb=ub+ab;
+        alx=uc;
+        [f1a,f2a,f3a] = decod(pa,ua,ha);
+        [f1b,f2b,f3b] = decod(pb,ub,hb);
+        [f1c,f2c,f3c] = decod(pc,uc,hc);
+        [f1d,f2d,f3d] = decod(pd,ud,hd);
+
+        df1r = 0.0; df2r = 0.0; df3r = 0.0;
+        df1l = 0.0; df2l = 0.0; df3l = 0.0;
+
+        if (alx >=0) % c/d
+            alam2r = 1.0; alam2l = 0.0;
+        else         % c\d
+            alam2r = 0.0; alam2l = 1.0;
         end
-        if (icalc == 1)
-            adum = 2.0*aa/gdgd^1.5;
-            bdum = aa/gamma/sqrt(gdgd)*(r3a+ga*r2a);
-            iterstar (adum,bdum,cdum)
-            ast = sqrt(gdgd)*cdum;
+        % delta f wrt the second family (contact)
+        df1r =df1r + alam2r*(f1d-f1c);
+        df2r =df2r + alam2r*(f2d-f2c);
+        df3r =df3r + alam2r*(f3d-f3c);
+        df1l =df1l + alam2l*(f1d-f1c);
+        df2l =df2l + alam2l*(f2d-f2c);
+        df3l =df3l + alam2l*(f3d-f3c);
+
+        if (ala*alc >= 0)
+            if (ala >=0) % a/c
+                alam1r = 1.0; alam1l = 0.0;
+            else         % a\c
+                alam1r = 0.0; alam1l = 1.0;
+            end
+            df1r = df1r + alam1r*(f1c-f1a);
+            df2r = df2r + alam1r*(f2c-f2a);
+            df3r = df3r + alam1r*(f3c-f3a);
+            df1l = df1l + alam1l*(f1c-f1a);
+            df2l = df2l + alam1l*(f2c-f2a);
+            df3l = df3l + alam1l*(f3c-f3a);
+        else % transonic case
+            gdgd=2.0*gd;
+            if (icalc == 0)
+                sqrhst=0.5*(-sqrt(gdgd)*aa+sqrt(gdgd*aa*aa+4.0*(r3a/rhoa+r2a)));
+                hst = sqrhst^2;
+                ast = sqrt(gdgd)*sqrhst;
+                ust = ast;
+                pst = rhoa*(-r2a+hst);
+            end
+            if (icalc == 1)
+                adum = 2.0*aa/gdgd^1.5;
+                bdum = aa/gamma/sqrt(gdgd)*(r3a+ga*r2a);
+                iterstar (adum,bdum,cdum)
+                ast = sqrt(gdgd)*cdum;
+                ust = ast;
+                hst = gb*ast^2;
+                pst= exp((log(hst)-r2a)*ga);
+            end
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ala <=0) % a\*/c
+                df1r = df1r + (f1c-f1st);
+                df2r = df2r + (f2c-f2st);
+                df3r = df3r + (f3c-f3st);
+                df1l = df1l + (f1st-f1a);
+                df2l = df2l + (f2st-f2a);
+                df3l = df3l + (f3st-f3a);
+            else          % a/*\c
+                df1l = df1l + (f1c-f1st);
+                df2l = df2l + (f2c-f2st);
+                df3l = df3l + (f3c-f3st);
+                df1r = df1r + (f1st-f1a);
+                df2r = df2r + (f2st-f2a);
+                df3r = df3r + (f3st-f3a);
+            end
+        end
+
+        if (ald*alb >= 0)
+            if (ald >=0) %d/b
+                alam3r = 1.0; alam3l = 0.0;
+            else         %d\b
+                alam3r = 0.0; alam3l = 1.0;
+            end
+            df1r = df1r + alam3r*(f1b-f1d);
+            df2r = df2r + alam3r*(f2b-f2d);
+            df3r = df3r + alam3r*(f3b-f3d);
+            df1l = df1l + alam3l*(f1b-f1d);
+            df2l = df2l + alam3l*(f2b-f2d);
+            df3l = df3l + alam3l*(f3b-f3d);
+        else
+            gdgd=2.0*gd;
+            if (icalc == 0)
+                sqrhst=0.5*(-sqrt(gdgd)*ab+sqrt(gdgd*ab*ab+4.*(r1b/rhob+r2b)));
+                hst = sqrhst^2;
+                ast = sqrt(gdgd)*sqrhst;
+                ust = -ast;
+                pst = rhob*(-r2b+hst);
+            end
+            if (icalc == 1)
+                adum = 2.0 * ab / gdgd^1.5;
+                bdum = ab / gamma / sqrt(gdgd) * (r1b + ga * r2b);
+                iterstar(adum, bdum, cdum);
+                ast = sqrt(gdgd) * cdum;
+                ust = -ast;
+                hst = gb * ast^2;
+                pst = exp((log(hst) - r2b) * ga);
+            end
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ald <=0) %d\*/b
+                df1r = df1r + (f1b-f1st);
+                df2r = df2r + (f2b-f2st);
+                df3r = df3r + (f3b-f3st);
+                df1l = df1l + (f1st-f1d);
+                df2l = df2l + (f2st-f2d);
+                df3l = df3l + (f3st-f3d);
+            else         %d/*\b
+                df1l = df1l + (f1b-f1st);
+                df2l = df2l + (f2b-f2st);
+                df3l = df3l + (f3b-f3st);
+                df1r = df1r + (f1st-f1d);
+                df2r = df2r + (f2st-f2d);
+                df3r = df3r + (f3st-f3d);
+            end
+        end
+
+        phi1(n)=f1a+df1l;
+        phi2(n)=f2a+df2l;
+        phi3(n)=f3a+df3l;
+
+    elseif ischeme == 3
+        %--------------------------------------------------------------
+        %  OPTION 3 : OSHER, P-ORDERING (physical / Hemker-Spekreijse)
+        %  Path:  U_a --(1-wave)--> U_c --(contact)--> U_d --(3-wave)--> U_b
+        %  1-family attached to the LEFT state, 3-family to the RIGHT.
+        %  Star states from the exact isentropic generalized Riemann
+        %  invariants (two-rarefaction structure):
+        %     1-field invariant  u + 2a/(g-1)  constant from the left
+        %     3-field invariant  u - 2a/(g-1)  constant from the right
+        %     contact:           u, p constant
+        %  Constants used:  gd=(g-1)/2 , gg=2/(g-1) , gc=(g+1)/(g-1) ,
+        %                   gi=(g-1)/(2g) , gb=1/(g-1).
+        %--------------------------------------------------------------
+        beta = (aa/ab) * (pb/pa)^gi;          % = ac/ad  (pressure equality)
+        ac   = ( gd*(ua-ub) + aa + ab ) / (1.0 + 1.0/beta);
+        ad   = ac/beta;
+
+        % robustness guard (P-ordering can approach vacuum in strong expansions)
+        if ac <= 0.0 || ad <= 0.0
+            fprintf('P-ordering near-vacuum star at k=%i and n=%i\n',k,n);
+            ac = max(ac,1.e-8);  ad = max(ad,1.e-8);
+        end
+
+        uc = ua + gg*(aa-ac);                 % from left 1-invariant
+        ud = uc;
+        pc = pa*(ac/aa)^(1.0/gi);             % isentropic from left
+        pd = pc;                              % pressure continuous across contact
+        hc = gb*ac^2;                         % h = a^2/(g-1)
+        hd = gb*ad^2;
+
+        ala = ua - aa;     % 1-wave speed, left state
+        alc = uc - ac;     % 1-wave speed, left star
+        ald = ud + ad;     % 3-wave speed, right star
+        alb = ub + ab;     % 3-wave speed, right state
+        alx = uc;          % contact speed
+
+        [f1a,f2a,f3a] = decod(pa,ua,ha);
+        [f1b,f2b,f3b] = decod(pb,ub,hb);
+        [f1c,f2c,f3c] = decod(pc,uc,hc);
+        [f1d,f2d,f3d] = decod(pd,ud,hd);
+
+        df1r=0.0; df2r=0.0; df3r=0.0;
+        df1l=0.0; df2l=0.0; df3l=0.0;
+
+        % --- 2nd family : contact  (jump f_d - f_c) ---
+        if (alx >= 0)
+            df1r=df1r+(f1d-f1c); df2r=df2r+(f2d-f2c); df3r=df3r+(f3d-f3c);
+        else
+            df1l=df1l+(f1d-f1c); df2l=df2l+(f2d-f2c); df3l=df3l+(f3d-f3c);
+        end
+
+        % --- 1st family : a -> c  (jump f_c - f_a) ---
+        if (ala*alc >= 0)
+            if (ala >= 0)
+                df1r=df1r+(f1c-f1a); df2r=df2r+(f2c-f2a); df3r=df3r+(f3c-f3a);
+            else
+                df1l=df1l+(f1c-f1a); df2l=df2l+(f2c-f2a); df3l=df3l+(f3c-f3a);
+            end
+        else % transonic 1-rarefaction : exact sonic point  u = a
+            ast = (ua + gg*aa)/gc;
             ust = ast;
+            pst = pa*(ast/aa)^(1.0/gi);
             hst = gb*ast^2;
-            pst= exp((log(hst)-r2a)*ga);
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ala <= 0) % a\*/c : a->s left, s->c right
+                df1l=df1l+(f1st-f1a); df2l=df2l+(f2st-f2a); df3l=df3l+(f3st-f3a);
+                df1r=df1r+(f1c-f1st); df2r=df2r+(f2c-f2st); df3r=df3r+(f3c-f3st);
+            else          % a/*\c
+                df1r=df1r+(f1st-f1a); df2r=df2r+(f2st-f2a); df3r=df3r+(f3st-f3a);
+                df1l=df1l+(f1c-f1st); df2l=df2l+(f2c-f2st); df3l=df3l+(f3c-f3st);
+            end
         end
-        [f1st,f2st,f3st] = decod(pst,ust,hst);
-        if (ala <=0) % a\*/c
-            df1r = df1r + (f1c-f1st);
-            df2r = df2r + (f2c-f2st);
-            df3r = df3r + (f3c-f3st);
-            df1l = df1l + (f1st-f1a);
-            df2l = df2l + (f2st-f2a);
-            df3l = df3l + (f3st-f3a);
-        else          % a/*\c
-            df1l = df1l + (f1c-f1st);
-            df2l = df2l + (f2c-f2st);
-            df3l = df3l + (f3c-f3st);
-            df1r = df1r + (f1st-f1a);
-            df2r = df2r + (f2st-f2a);
-            df3r = df3r + (f3st-f3a);
-        end
-    end
-    
-    alc_P = uc+sqrt(2.0*gd*hd_P); %ald equiv.
-    if (alc_P*alb >= 0)
-        if (alc_P >=0) %d/b
-            alam3r = 1.0;
-            alam3l = 0.0;
-        else         %d\b
-            alam3r = 0.0;
-            alam3l = 1.0;
-        end
-        [f1P,f2P,f3P]=decod(pc,uc,hd_P);
-        df1r=df1r+alam3r*(f1b-f1P);
-        df2r=df2r+alam3r*(f2b-f2P);
-        df3r=df3r+alam3r*(f3b-f3P);
-        df1l=df1l+alam3l*(f1b-f1P);
-        df2l=df2l+alam3l*(f2b-f2P);
-        df3l=df3l+alam3l*(f3b-f3P);
-    else
-        gdgd=2.0*gd;
-        if (icalc == 0)
-            sqrhst=0.5*(-sqrt(gdgd)*ab+sqrt(gdgd*ab*ab+4.*(r1b/rhob+r2b)));
-            hst = sqrhst^2;
-            ast = sqrt(gdgd)*sqrhst;
-            ust = -ast;
-            pst = rhob*(-r2b+hst);
-        end
-        if (icalc == 1)
-            adum = 2.0 * ab / gdgd^1.5;
-            bdum = ab / gamma / sqrt(gdgd) * (r1b + ga * r2b);
-            iterstar(adum, bdum, cdum);
-            ast = sqrt(gdgd) * cdum;
-            ust = -ast;
-            hst = gb * ast^2;
-            pst = exp((log(hst) - r2b) * ga);
-        end
-        [f1st,f2st,f3st] = decod(pst,ust,hst);
-        [f1P,f2P,f3P]=decod(pc,uc,hd_P);
-        if (alc_P <=0) %d\*/b
-            df1r =  df1r+(f1b-f1st);
-            df2r = df2r + (f2b-f2st);
-            df3r = df3r + (f3b-f3st);
-            df1l = df1l+(f1st-f1P);
-            df2l = df2l + (f2st-f2P);
-            df3l = df3l + (f3st-f3P);
-        else         %d/*\b
-            df1l=df1l+(f1b-f1st);
-            df2l = df2l + (f2b-f2st);
-            df3l = df3l + (f3b-f3st);
-            df1r=df1r+(f1st-f1P);
-            df2r = df2r + (f2st-f2P);
-            df3r = df3r + (f3st-f3P);
-        end
-    end
 
-    if (alx >=0) % c / hd_P
-        alam2r = 1.0;
-        alam2l = 0.0;
-    else
-        alam2r = 0.0;
-        alam2l = 1.0;
-    end
-    [f1P,f2P,f3P]=decod(pc,uc,hd_P);
-    df1r=df1r+alam2r*(f1P-f1c);
-    df2r=df2r+alam2r*(f2P-f2c);
-    df3r=df3r+alam2r*(f3P-f3c);
-    df1l=df1l+alam2l*(f1P-f1c);
-    df2l=df2l+alam2l*(f2P-f2c);
-    df3l=df3l+alam2l*(f3P-f3c);
+        % --- 3rd family : d -> b  (jump f_b - f_d) ---
+        if (ald*alb >= 0)
+            if (ald >= 0)
+                df1r=df1r+(f1b-f1d); df2r=df2r+(f2b-f2d); df3r=df3r+(f3b-f3d);
+            else
+                df1l=df1l+(f1b-f1d); df2l=df2l+(f2b-f2d); df3l=df3l+(f3b-f3d);
+            end
+        else % transonic 3-rarefaction : exact sonic point  u = -a
+            ast = (gg*ab - ub)/gc;
+            ust = -ast;
+            pst = pb*(ast/ab)^(1.0/gi);
+            hst = gb*ast^2;
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ald <= 0) % d\*/b
+                df1l=df1l+(f1st-f1d); df2l=df2l+(f2st-f2d); df3l=df3l+(f3st-f3d);
+                df1r=df1r+(f1b-f1st); df2r=df2r+(f2b-f2st); df3r=df3r+(f3b-f3st);
+            else          % d/*\b
+                df1r=df1r+(f1st-f1d); df2r=df2r+(f2st-f2d); df3r=df3r+(f3st-f3d);
+                df1l=df1l+(f1b-f1st); df2l=df2l+(f2b-f2st); df3l=df3l+(f3b-f3st);
+            end
+        end
 
-    phi1(n)=f1a+df1l;
-    phi2(n)=f2a+df2l;
-    phi3(n)=f3a+df3l;
+        phi1(n)=f1a+df1l;
+        phi2(n)=f2a+df2l;
+        phi3(n)=f3a+df3l;
+
+    elseif ischeme == 2
+        %--------------------------------------------------------------
+        %  OPTION 2 : OSHER, O-ORDERING (original Osher-Solomon)
+        %  Path:  U_a --(3-wave)--> U_c --(contact)--> U_d --(1-wave)--> U_b
+        %  REVERSED: 3-family attached to the LEFT state, 1-family to the
+        %  RIGHT.  Star states:
+        %     3-field invariant  u - 2a/(g-1)  constant from the left
+        %     1-field invariant  u + 2a/(g-1)  constant from the right
+        %  The only algebraic difference from P-ordering in the star
+        %  sound speed is the SIGN of the velocity-difference term.
+        %  Left sub-path now carries  lambda = u+a ; right sub-path u-a.
+        %--------------------------------------------------------------
+        beta = (aa/ab) * (pb/pa)^gi;          % = ac/ad (pressure equality)
+        ac   = ( aa + ab - gd*(ua-ub) ) / (1.0 + 1.0/beta);
+        ad   = ac/beta;
+
+        % robustness guard (O-ordering breaks down for strong colliding flows)
+        if ac <= 0.0 || ad <= 0.0
+            fprintf('O-ordering invalid star (colliding flow) at k=%i and n=%i\n',k,n);
+            ac = max(ac,1.e-8);  ad = max(ad,1.e-8);
+        end
+
+        uc = ua - gg*(aa-ac);                 % from left 3-invariant
+        ud = uc;
+        pc = pa*(ac/aa)^(1.0/gi);             % isentropic from left
+        pd = pc;                              % pressure continuous across contact
+        hc = gb*ac^2;
+        hd = gb*ad^2;
+
+        ala = ua + aa;     % left sub-path is the 3-family -> u+a
+        alc = uc + ac;
+        ald = ud - ad;     % right sub-path is the 1-family -> u-a
+        alb = ub - ab;
+        alx = uc;          % contact speed
+
+        [f1a,f2a,f3a] = decod(pa,ua,ha);
+        [f1b,f2b,f3b] = decod(pb,ub,hb);
+        [f1c,f2c,f3c] = decod(pc,uc,hc);
+        [f1d,f2d,f3d] = decod(pd,ud,hd);
+
+        df1r=0.0; df2r=0.0; df3r=0.0;
+        df1l=0.0; df2l=0.0; df3l=0.0;
+
+        % --- 2nd family : contact  (jump f_d - f_c) ---
+        if (alx >= 0)
+            df1r=df1r+(f1d-f1c); df2r=df2r+(f2d-f2c); df3r=df3r+(f3d-f3c);
+        else
+            df1l=df1l+(f1d-f1c); df2l=df2l+(f2d-f2c); df3l=df3l+(f3d-f3c);
+        end
+
+        % --- left sub-path (3-family) : a -> c  (jump f_c - f_a) ---
+        if (ala*alc >= 0)
+            if (ala >= 0)
+                df1r=df1r+(f1c-f1a); df2r=df2r+(f2c-f2a); df3r=df3r+(f3c-f3a);
+            else
+                df1l=df1l+(f1c-f1a); df2l=df2l+(f2c-f2a); df3l=df3l+(f3c-f3a);
+            end
+        else % transonic 3-rarefaction : exact sonic point  u = -a
+            ast = (gg*aa - ua)/gc;
+            ust = -ast;
+            pst = pa*(ast/aa)^(1.0/gi);
+            hst = gb*ast^2;
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ala <= 0) % a\*/c
+                df1l=df1l+(f1st-f1a); df2l=df2l+(f2st-f2a); df3l=df3l+(f3st-f3a);
+                df1r=df1r+(f1c-f1st); df2r=df2r+(f2c-f2st); df3r=df3r+(f3c-f3st);
+            else          % a/*\c
+                df1r=df1r+(f1st-f1a); df2r=df2r+(f2st-f2a); df3r=df3r+(f3st-f3a);
+                df1l=df1l+(f1c-f1st); df2l=df2l+(f2c-f2st); df3l=df3l+(f3c-f3st);
+            end
+        end
+
+        % --- right sub-path (1-family) : d -> b  (jump f_b - f_d) ---
+        if (ald*alb >= 0)
+            if (ald >= 0)
+                df1r=df1r+(f1b-f1d); df2r=df2r+(f2b-f2d); df3r=df3r+(f3b-f3d);
+            else
+                df1l=df1l+(f1b-f1d); df2l=df2l+(f2b-f2d); df3l=df3l+(f3b-f3d);
+            end
+        else % transonic 1-rarefaction : exact sonic point  u = a
+            ast = (ub + gg*ab)/gc;
+            ust = ast;
+            pst = pb*(ast/ab)^(1.0/gi);
+            hst = gb*ast^2;
+            [f1st,f2st,f3st] = decod(pst,ust,hst);
+            if (ald <= 0) % d\*/b
+                df1l=df1l+(f1st-f1d); df2l=df2l+(f2st-f2d); df3l=df3l+(f3st-f3d);
+                df1r=df1r+(f1b-f1st); df2r=df2r+(f2b-f2st); df3r=df3r+(f3b-f3st);
+            else          % d/*\b
+                df1r=df1r+(f1st-f1d); df2r=df2r+(f2st-f2d); df3r=df3r+(f3st-f3d);
+                df1l=df1l+(f1b-f1st); df2l=df2l+(f2b-f2st); df3l=df3l+(f3b-f3st);
+            end
+        end
+
+        phi1(n)=f1a+df1l;
+        phi2(n)=f2a+df2l;
+        phi3(n)=f3a+df3l;
+
+    end % scheme dispatch
 end % end of the do loop
+
+%======================================================================
+%  BOUNDARY CONDITIONS  (scheme independent)
+%======================================================================
 if(itest == 1)  %REFLECTING WALL B.C.
     r1dum  = p002-rho002*a002*u002;
     r2dum  = h002-p002/rho002;
