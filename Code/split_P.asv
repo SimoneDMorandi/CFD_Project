@@ -400,7 +400,7 @@ for n=2:ncmm
         ac   = ( aa + ab - gd*(ua-ub) ) / (1.0 + 1.0/beta);
         ad   = ac/beta;
 
-        % robustness guard
+        % robustness guard (O-ordering breaks down for strong colliding flows)
         if ac <= 0.0 || ad <= 0.0
             fprintf('O-ordering invalid star (colliding flow) at k=%i and n=%i\n',k,n);
             ac = max(ac,1.e-8);  ad = max(ad,1.e-8);
@@ -427,14 +427,14 @@ for n=2:ncmm
         df1r=0.0; df2r=0.0; df3r=0.0;
         df1l=0.0; df2l=0.0; df3l=0.0;
 
-        % 2nd family : contact  (jump f_d - f_c)
+        % --- 2nd family : contact  (jump f_d - f_c) ---
         if (alx >= 0)
             df1r=df1r+(f1d-f1c); df2r=df2r+(f2d-f2c); df3r=df3r+(f3d-f3c);
         else
             df1l=df1l+(f1d-f1c); df2l=df2l+(f2d-f2c); df3l=df3l+(f3d-f3c);
         end
 
-        % left sub-path (3-family) : a -> c  (jump f_c - f_a)
+        % --- left sub-path (3-family) : a -> c  (jump f_c - f_a) ---
         if (ala*alc >= 0)
             if (ala >= 0)
                 df1r=df1r+(f1c-f1a); df2r=df2r+(f2c-f2a); df3r=df3r+(f3c-f3a);
@@ -485,6 +485,9 @@ for n=2:ncmm
     end % scheme dispatch
 end % end of the do loop
 
+%======================================================================
+%  BOUNDARY CONDITIONS  (scheme independent)
+%======================================================================
 if(itest == 1)  %REFLECTING WALL B.C.
     r1dum  = p002-rho002*a002*u002;
     r2dum  = h002-p002/rho002;
