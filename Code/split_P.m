@@ -291,7 +291,7 @@ for n=2:ncmm
         phi3(n)=f3a+df3l;
 
     % P ordering.
-    elseif ischeme == 3
+    elseif ischeme == 2
         %  Path:  U_a --(1-wave)--> U_c --(contact)--> U_d --(3-wave)--> U_b
         %  1-family attached to the LEFT state, 3-family to the RIGHT.
         %  Star states from the exact isentropic generalized Riemann
@@ -385,104 +385,6 @@ for n=2:ncmm
         phi1(n)=f1a+df1l;
         phi2(n)=f2a+df2l;
         phi3(n)=f3a+df3l;
-
-    % O ordering
-    elseif ischeme == 2
-     
-        %  Path:  U_a --(3-wave)--> U_c --(contact)--> U_d --(1-wave)--> U_b
-        %  REVERSED: 3-family attached to the LEFT state, 1-family to the
-        %  RIGHT.  Star states:
-        %     3-field invariant  u - 2a/(g-1)  constant from the left
-        %     1-field invariant  u + 2a/(g-1)  constant from the right
-        %  The only algebraic difference from P-ordering in the star
-        %  sound speed is the SIGN of the velocity-difference term.
-        beta = (aa/ab) * (pb/pa)^gi;          % = ac/ad (pressure equality)
-        ac   = ( aa + ab - gd*(ua-ub) ) / (1.0 + 1.0/beta);
-        ad   = ac/beta;
-
-        % robustness guard
-        if ac <= 0.0 || ad <= 0.0
-            fprintf('O-ordering invalid star (colliding flow) at k=%i and n=%i\n',k,n);
-            ac = max(ac,1.e-8);  ad = max(ad,1.e-8);
-        end
-
-        uc = ua - gg*(aa-ac);                 % from left 3-invariant
-        ud = uc;
-        pc = pa*(ac/aa)^(1.0/gi);             % isentropic from left
-        pd = pc;                              % pressure continuous across contact
-        hc = gb*ac^2;
-        hd = gb*ad^2;
-
-        ala = ua + aa;     % left sub-path is the 3-family -> u+a
-        alc = uc + ac;
-        ald = ud - ad;     % right sub-path is the 1-family -> u-a
-        alb = ub - ab;
-        alx = uc;          % contact speed
-
-        [f1a,f2a,f3a] = decod(pa,ua,ha);
-        [f1b,f2b,f3b] = decod(pb,ub,hb);
-        [f1c,f2c,f3c] = decod(pc,uc,hc);
-        [f1d,f2d,f3d] = decod(pd,ud,hd);
-
-        df1r=0.0; df2r=0.0; df3r=0.0;
-        df1l=0.0; df2l=0.0; df3l=0.0;
-
-        % 2nd family : contact  (jump f_d - f_c)
-        if (alx >= 0)
-            df1r=df1r+(f1d-f1c); df2r=df2r+(f2d-f2c); df3r=df3r+(f3d-f3c);
-        else
-            df1l=df1l+(f1d-f1c); df2l=df2l+(f2d-f2c); df3l=df3l+(f3d-f3c);
-        end
-
-        % left sub-path (3-family) : a -> c  (jump f_c - f_a)
-        if (ala*alc >= 0)
-            if (ala >= 0)
-                df1r=df1r+(f1c-f1a); df2r=df2r+(f2c-f2a); df3r=df3r+(f3c-f3a);
-            else
-                df1l=df1l+(f1c-f1a); df2l=df2l+(f2c-f2a); df3l=df3l+(f3c-f3a);
-            end
-        else % transonic 3-rarefaction : exact sonic point  u = -a
-            ast = (gg*aa - ua)/gc;
-            ust = -ast;
-            pst = pa*(ast/aa)^(1.0/gi);
-            hst = gb*ast^2;
-            [f1st,f2st,f3st] = decod(pst,ust,hst);
-            if (ala <= 0) % a\*/c
-                df1l=df1l+(f1st-f1a); df2l=df2l+(f2st-f2a); df3l=df3l+(f3st-f3a);
-                df1r=df1r+(f1c-f1st); df2r=df2r+(f2c-f2st); df3r=df3r+(f3c-f3st);
-            else          % a/*\c
-                df1r=df1r+(f1st-f1a); df2r=df2r+(f2st-f2a); df3r=df3r+(f3st-f3a);
-                df1l=df1l+(f1c-f1st); df2l=df2l+(f2c-f2st); df3l=df3l+(f3c-f3st);
-            end
-        end
-
-        % --- right sub-path (1-family) : d -> b  (jump f_b - f_d) ---
-        if (ald*alb >= 0)
-            if (ald >= 0)
-                df1r=df1r+(f1b-f1d); df2r=df2r+(f2b-f2d); df3r=df3r+(f3b-f3d);
-            else
-                df1l=df1l+(f1b-f1d); df2l=df2l+(f2b-f2d); df3l=df3l+(f3b-f3d);
-            end
-        else % transonic 1-rarefaction : exact sonic point  u = a
-            ast = (ub + gg*ab)/gc;
-            ust = ast;
-            pst = pb*(ast/ab)^(1.0/gi);
-            hst = gb*ast^2;
-            [f1st,f2st,f3st] = decod(pst,ust,hst);
-            if (ald <= 0) % d\*/b
-                df1l=df1l+(f1st-f1d); df2l=df2l+(f2st-f2d); df3l=df3l+(f3st-f3d);
-                df1r=df1r+(f1b-f1st); df2r=df2r+(f2b-f2st); df3r=df3r+(f3b-f3st);
-            else          % d/*\b
-                df1r=df1r+(f1st-f1d); df2r=df2r+(f2st-f2d); df3r=df3r+(f3st-f3d);
-                df1l=df1l+(f1b-f1st); df2l=df2l+(f2b-f2st); df3l=df3l+(f3b-f3st);
-            end
-        end
-
-        phi1(n)=f1a+df1l;
-        phi2(n)=f2a+df2l;
-        phi3(n)=f3a+df3l;
-
-    end % scheme dispatch
 end % end of the do loop
 
 if(itest == 1)  %REFLECTING WALL B.C.
